@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Potretku - Photobooth AI Pro</title>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Patrick+Hand&display=swap" rel="stylesheet">
+    
+    <!-- AI MediaPipe Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --bg-main: #0b0f19;
+            --bg-card: #151a28;
+            --bg-dropdown: #2d2f36;
+            --text-light: #ffffff;
+            --text-muted: #94a3b8;
+            --accent-green: #10b981;
+            --accent-yellow: #eab308;
+            --accent-purple: #7c3aed;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif; }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-light);
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .app-container {
+            width: 100%; max-width: 480px; background-color: var(--bg-main);
+            display: flex; flex-direction: column; position: relative; overflow: hidden;
+        }
+
+        header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; }
+        .logo-area { display: flex; align-items: center; gap: 10px; }
+        .logo-icon { font-size: 24px; }
+        .logo-text { display: flex; flex-direction: column; }
+        .logo-text span:first-child { font-weight: 600; font-size: 16px; letter-spacing: 1px; }
+        .logo-text span:last-child { font-size: 10px; color: var(--text-muted); letter-spacing: 2px; }
+
+        .status-indicator {
+            width: 35px; height: 25px; border-radius: 15px;
+            background-color: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3);
+            display: flex; justify-content: center; align-items: center;
+        }
+        .dot {
+            width: 8px; height: 8px; background-color: var(--accent-green); border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .top-options { display: flex; gap: 10px; padding: 0 20px 15px; }
+        .opt-btn {
+            background-color: var(--bg-card); border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px; padding: 10px 12px; color: var(--text-light);
+            font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; flex: 1; justify-content: center;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        .camera-container {
+            flex: 1; margin: 0 20px; background-color: #000; border-radius: 20px; 
+            position: relative; overflow: hidden; display: flex; justify-content: center; align-items: center;
+            min-height: 380px;
+        }
+
+        #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); transition: filter 0.3s ease; }
+        #output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; transform: scaleX(-1); pointer-events: none; }
+
+        .cam-status {
+            position: absolute; bottom: 15px; left: 15px;
+            background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
+            padding: 6px 12px; border-radius: 20px; font-size: 12px;
+            display: flex; align-items: center; gap: 6px; z-index: 6;
+        }
+        .cam-status .dot { width: 6px; height: 6px; }
+        
+        #ai-loading {
+            position: absolute; top: 15px; right: 15px; background-color: rgba(234, 179, 8, 0.9); color: black;
+            padding: 4px 10px; border-radius: 10px; font-size: 10px; font-weight: bold; z-index: 6; display: none;
+        }
+
+        #countdown-overlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; 
+            align-items: center; z-index: 20; font-size: 90px; font-weight: bold; color: var(--accent-yellow); text-shadow: 0 0 25px rgba(0,0,0,0.9);
+        }
+
+        .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px; }
+        .btn {
+            border: none; border-radius: 15px; padding: 15px; font-size: 14px; font-weight: 500;
+            display: flex; justify-content: center; align-items: center; gap: 10px; cursor: pointer; color: var(--text-light);
+        }
+        .btn-dark { background-color: var(--bg-card); }
+        .btn-yellow { background-color: var(--accent-yellow); color: #000; font-weight: 600; }
+        .btn-purple { background-color: var(--accent-purple); font-weight: 600; }
+
+        /* MODAL PREVIEW & NOTIFIKASI */
+        #preview-modal, #broadcast-modal {
+            position: absolute; inset: 0; background: rgba(11, 15, 25, 0.95);
+            z-index: 50; display: none; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center;
+        }
+        #preview-img {
+            max-width: 100%; max-height: 65vh; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 25px; object-fit: contain;
+        }
+        .preview-actions { display: flex; gap: 15px; width: 100%; }
+
+        .dropdown-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 30; display: none; align-items: center; justify-content: center;
+        }
+        .dropdown-menu { width: 90%; max-height: 75vh; overflow-y: auto; background-color: var(--bg-dropdown); border-radius: 20px; }
+        .dropdown-item {
+            padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; font-family: 'Patrick Hand', cursive; font-size: 20px; letter-spacing: 1px;
+        }
+        .radio-circle {
+            width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--text-muted);
+            display: flex; justify-content: center; align-items: center; flex-shrink: 0;
+        }
+        .radio-circle.active { border-color: #60a5fa; }
+        .radio-circle.active::after { content: ''; width: 10px; height: 10px; background-color: #60a5fa; border-radius: 50%; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header>
+        <div class="logo-area">
+            <i class="fa-solid fa-camera-retro logo-icon"></i>
+            <div class="logo-text">
+                <span>POTRETKU</span>
+                <span>STUDIO FOTO</span>
+            </div>
+        </div>
+        <div class="status-indicator"><div class="dot"></div></div>
+    </header>
+
+    <div class="top-options">
+        <div class="opt-btn" onclick="openDropdown('gesture')">
+            <span>Mode: <span id="active-gesture">✌️ Auto Peace</span></span>
+            <i class="fa-solid fa-chevron-down" style="font-size: 10px;"></i>
+        </div>
+        <div class="opt-btn" onclick="openDropdown('filter')">
+            <i class="fa-solid fa-palette"></i>
+            <span id="active-filter">Normal Color</span>
+        </div>
+    </div>
+
+    <div class="camera-container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="output_canvas"></canvas>
+        <div id="ai-loading">Memuat AI...</div>
+        <div id="countdown-overlay">3</div>
+
+        <div class="cam-status">
+            <div class="dot"></div>
+            <span>Potretku Studio Ready</span>
+        </div>
+    </div>
+
+    <div class="controls-grid">
+        <button class="btn btn-dark" id="btn-camera" onclick="toggleCamera()">
+            <i class="fa-solid fa-video-slash"></i> Matikan Kamera
+        </button>
+        <button class="btn btn-yellow" onclick="takePhoto()">
+            <i class="fa-regular fa-image"></i> Foto
+        </button>
+        <button class="btn btn-dark" id="btn-record" onclick="toggleRecordVideo()">
+            <i class="fa-solid fa-video" id="record-icon"></i> <span id="record-text">Rekam Video</span>
+        </button>
+        <button class="btn btn-purple" onclick="startPhotobooth3x1()">
+            <i class="fa-solid fa-table-cells-large"></i> Photobooth (3x)
+        </button>
+    </div>
+
+    <!-- PREVIEW MODAL -->
+    <div id="preview-modal">
+        <h3 style="margin-bottom: 15px; font-weight: 500;">Hasil Foto</h3>
+        <img id="preview-img" src="" alt="Hasil Foto">
+        <div class="preview-actions">
+            <button class="btn btn-dark" style="flex: 1;" onclick="closePreview()">
+                <i class="fa-solid fa-xmark"></i> Batal
+            </button>
+            <button class="btn btn-yellow" style="flex: 2;" id="btn-save">
+                <i class="fa-solid fa-download"></i> Simpan ke Galeri
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL POPUP BROADCAST NOTIFIKASI DARI DATABASE -->
+    <div id="broadcast-modal">
+        <div style="font-size: 40px; color: var(--accent-yellow); margin-bottom: 10px;"><i class="fa-solid fa-bullhorn"></i></div>
+        <h3 id="notif-title" style="margin-bottom: 10px; font-weight: 600;">Pengumuman Baru</h3>
+        <p id="notif-message" style="color: var(--text-muted); font-size: 14px; margin-bottom: 25px; padding: 0 10px;"></p>
+        <button class="btn btn-yellow" style="width: 100%;" onclick="closeBroadcastModal()">OK, Mengerti</button>
+    </div>
+
+    <!-- Modal Mode AI -->
+    <div class="dropdown-overlay" id="gesture-modal" onclick="closeDropdowns(event)">
+        <div class="dropdown-menu">
+            <div class="dropdown-item" onclick="selectOption('gesture', '✌️ Auto Peace')">
+                <span>✌️ Auto Peace (2 Jari)</span><div class="radio-circle active"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('gesture', '🖐️ Auto Telapak Tangan')">
+                <span>🖐️ Auto Telapak Tangan (Stop)</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('gesture', '👍 Auto Jempol Up')">
+                <span>👍 Auto Jempol Up (Thumbs Up)</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('gesture', '🦴 Combo: Kerangka + Auto Peace')">
+                <span>🦴 Combo: Kerangka + Auto Peace</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('gesture', '✨ Mode Clean (Tanpa Garis)')">
+                <span>✨ Mode Clean (Tanpa Garis & Auto Off)</span><div class="radio-circle"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Filter -->
+    <div class="dropdown-overlay" id="filter-modal" onclick="closeDropdowns(event)">
+        <div class="dropdown-menu">
+            <div class="dropdown-item" onclick="selectOption('filter', 'Normal Color', 'none')">
+                <span>Normal Color</span><div class="radio-circle active"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('filter', 'Hitam Putih (B&W)', 'grayscale(100%)')">
+                <span>Hitam Putih (B&W)</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('filter', 'Warm Sepia', 'sepia(80%)')">
+                <span>Warm Sepia</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('filter', 'Cyber Pink', 'hue-rotate(270deg) saturate(160%)')">
+                <span>Cyber Pink</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('filter', 'Sunwarm Vintage', 'sepia(40%) contrast(120%) brightness(110%)')">
+                <span>Sunwarm Vintage</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('filter', 'Cool Blue', 'hue-rotate(180deg) saturate(130%)')">
+                <span>Cool Blue</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('filter', 'Emerald Forest', 'hue-rotate(90deg) saturate(140%)')">
+                <span>Emerald Forest</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('filter', 'Cyberpunk Neon', 'contrast(150%) saturate(200%) hue-rotate(310deg)')">
+                <span>Cyberpunk Neon</span><div class="radio-circle"></div>
+            </div>
+            <div class="dropdown-item" onclick="selectOption('filter', 'Dramatic Noir', 'grayscale(100%) contrast(170%) brightness(90%)')">
+                <span>Dramatic Noir</span><div class="radio-circle"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SDK FIREBASE REALTIME DATABASE -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, onChildAdded } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyByXv08gFFtlW5cStMaOjFEkK-EybTFzA8",
+        authDomain: "chat-samudev.firebaseapp.com",
+        databaseURL: "https://chat-samudev-default-rtdb.firebaseio.com",
+        projectId: "chat-samudev",
+        storageBucket: "chat-samudev.appspot.com",
+        messagingSenderId: "753343096382",
+        appId: "1:753343096382:android:5174bd75dce635ff4d936f"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // Fungsi otomatis untuk memicu Notifikasi Asli Android (Status Bar)
+    async function triggerSystemNotification(title, body) {
+        try {
+            const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
+            if (LocalNotifications) {
+                // Minta izin otomatis ke user saat pertama kali nerima/buka
+                const perm = await LocalNotifications.requestPermissions();
+                if (perm.display === 'granted') {
+                    await LocalNotifications.schedule({
+                        notifications: [
+                            {
+                                title: title,
+                                body: body,
+                                id: new Date().getTime(),
+                                schedule: { at: new Date(Date.now() + 100) },
+                                sound: null,
+                                smallIcon: "ic_stat_icon_config_sample", // Ikon default status bar
+                                iconColor: "#eab308"
+                            }
+                        ]
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("Gagal memunculkan notifikasi sistem:", e);
+        }
+    }
+
+    // Mendengarkan data broadcast dari Firebase secara real-time
+    const notifRef = ref(db, 'broadcast_notifications');
+    onChildAdded(notifRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data && data.title && data.message) {
+            // 1. Munculkan modal di dalam web/APK (biar interaktif)
+            if (typeof showBroadcastModal === 'function') {
+                showBroadcastModal(data.title, data.message);
+            }
+            // 2. Tembak langsung ke Status Bar HP Android
+            triggerSystemNotification(data.title, data.message);
+        }
+    });
+</script>
+
+</script>
+
+<script>
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const btnCamera = document.getElementById('btn-camera');
+    const aiLoading = document.getElementById('ai-loading');
+    const countdownOverlay = document.getElementById('countdown-overlay');
+    
+    const previewModal = document.getElementById('preview-modal');
+    const previewImg = document.getElementById('preview-img');
+    const btnSave = document.getElementById('btn-save');
+    
+    // Elemen Modal Broadcast
+    const broadcastModal = document.getElementById('broadcast-modal');
+    const notifTitle = document.getElementById('notif-title');
+    const notifMessage = document.getElementById('notif-message');
+
+    let currentDataURL = '';
+    let currentFilename = '';
+    let stream = null;
+    let isCameraOn = true;
+    let currentFilterCSS = 'none';
+    let currentMode = '✌️ Auto Peace';
+    let isBusy = false;
+    let lastGestureTime = 0;
+
+    function showBroadcastModal(title, message) {
+        notifTitle.innerText = title;
+        notifMessage.innerText = message;
+        broadcastModal.style.display = 'flex';
+    }
+
+    function closeBroadcastModal() {
+        broadcastModal.style.display = 'none';
+    }
+
+    async function startCamera() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } });
+            videoElement.srcObject = stream;
+            isCameraOn = true;
+            aiLoading.style.display = 'block';
+            videoElement.addEventListener('loadeddata', predictWebcam);
+        } catch (err) {
+            console.error("Error akses kamera: ", err);
+        }
+    }
+
+    function toggleCamera() {
+        if (isCameraOn) {
+            if (stream) { stream.getTracks().forEach(track => track.stop()); }
+            videoElement.srcObject = null;
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            btnCamera.innerHTML = '<i class="fa-solid fa-video"></i> Nyalakan Kamera';
+            isCameraOn = false;
+        } else {
+            startCamera();
+            btnCamera.innerHTML = '<i class="fa-solid fa-video-slash"></i> Matikan Kamera';
+        }
+    }
+
+    // --- SETUP AI MEDIAPIPE ---
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({
+        maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65
+    });
+
+    hands.onResults(function(results) {
+        aiLoading.style.display = 'none';
+        
+        canvasElement.width = videoElement.videoWidth;
+        canvasElement.height = videoElement.videoHeight;
+        
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+
+            if (currentMode === '🦴 Combo: Kerangka + Auto Peace') {
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#ef4444', lineWidth: 3});
+                drawLandmarks(canvasCtx, landmarks, {color: '#eab308', lineWidth: 1, radius: 4});
+            }
+
+            if (!isBusy && currentMode !== '✨ Mode Clean (Tanpa Garis)') {
+                let triggered = false;
+                if (currentMode.includes('Auto Peace') && isPeaceGesture(landmarks)) triggered = true;
+                else if (currentMode.includes('Telapak Tangan') && isPalmGesture(landmarks)) triggered = true;
+                else if (currentMode.includes('Jempol Up') && isThumbsUpGesture(landmarks)) triggered = true;
+
+                if (triggered) {
+                    let now = Date.now();
+                    if (now - lastGestureTime > 5000) {
+                        lastGestureTime = now;
+                        triggerCountdownAndPhoto();
+                    }
+                }
+            }
+        }
+        canvasCtx.restore();
+    });
+
+    function isPeaceGesture(lm) {
+        const indexUp = lm[8].y < lm[6].y;
+        const middleUp = lm[12].y < lm[10].y;
+        const ringDown = lm[16].y > lm[14].y;
+        const pinkyDown = lm[20].y > lm[18].y;
+        return indexUp && middleUp && ringDown && pinkyDown;
+    }
+    function isPalmGesture(lm) {
+        return lm[8].y < lm[6].y && lm[12].y < lm[10].y && lm[16].y < lm[14].y && lm[20].y < lm[18].y;
+    }
+    function isThumbsUpGesture(lm) {
+        return lm[4].y < lm[3].y && lm[8].y > lm[6].y && lm[12].y > lm[10].y && lm[16].y > lm[14].y && lm[20].y > lm[18].y;
+    }
+
+    async function predictWebcam() {
+        if (isCameraOn) { await hands.send({image: videoElement}); window.requestAnimationFrame(predictWebcam); }
+    }
+
+    // --- PREVIEW & CAPACITOR SAVE ---
+    function showPreview(dataURL, filename) {
+        currentDataURL = dataURL;
+        currentFilename = filename;
+        previewImg.src = dataURL;
+        previewModal.style.display = 'flex';
+    }
+
+    function closePreview() {
+        previewModal.style.display = 'none';
+        previewImg.src = '';
+        currentDataURL = '';
+    }
+
+    btnSave.onclick = async function() {
+        if (!currentDataURL) return;
+
+        try {
+            const Filesystem = window.Capacitor?.Plugins?.Filesystem;
+            
+    if (!Filesystem) {
+                const link = document.createElement('a');
+                link.href = currentDataURL;
+                link.download = currentFilename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                const originalText = btnSave.innerHTML;
+                btnSave.innerHTML = '<i class="fa-solid fa-check"></i> Tersimpan (Browser)!';
+                setTimeout(() => {
+                    btnSave.innerHTML = originalText;
+                    closePreview();
+                }, 1500);
+                return;
+            }
+
+            const originalText = btnSave.innerHTML;
+            btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan...';
+            btnSave.disabled = true;
+
+            const base64Data = currentDataURL.split(',')[1];
+            const customPath = localStorage.getItem("mori_download_path") || "Mori";
+            const filePath = `Download/${customPath}/${currentFilename}`;
+
+            const result = await Filesystem.writeFile({
+                path: filePath,
+                data: base64Data,
+                directory: "EXTERNAL_STORAGE",
+                recursive: true
+            });
+
+            const event = new CustomEvent("mori_file_saved", {
+                detail: {
+                    url: "potretku-" + Date.now(),
+                    path: filePath,
+                    uri: result.uri
+                }
+            });
+            window.dispatchEvent(event);
+
+            btnSave.innerHTML = '<i class="fa-solid fa-check"></i> Tersimpan!';
+            setTimeout(() => {
+                btnSave.innerHTML = originalText;
+                btnSave.disabled = false;
+                closePreview();
+            }, 1500);
+
+        } catch (error) {
+            console.error("Gagal simpan native:", error);
+            alert("Error gagal menyimpan ke Galeri Android: " + error.message);
+            btnSave.innerHTML = '<i class="fa-solid fa-download"></i> Simpan ke Galeri';
+            btnSave.disabled = false;
+        }
+    };
+
+    function triggerCountdownAndPhoto() {
+        isBusy = true;
+        countdownOverlay.style.display = 'flex';
+        let count = 3;
+        countdownOverlay.innerText = count;
+
+        let timer = setInterval(() => {
+            count--;
+            if (count > 0) {
+                countdownOverlay.innerText = count;
+            } else {
+                clearInterval(timer);
+                countdownOverlay.style.display = 'none';
+                takePhotoAction(`Potretku_${Date.now()}.jpg`);
+                setTimeout(() => { isBusy = false; }, 2000);
+            }
+        }, 1000);
+    }
+
+    function takePhoto() {
+        if (!isCameraOn) return alert("Nyalakan kamera dulu!");
+        if (isBusy) return;
+        triggerCountdownAndPhoto();
+    }
+
+    function takePhotoAction(filename) {
+        const tempCanvas = document.createElement('canvas');
+        const context = tempCanvas.getContext('2d');
+        tempCanvas.width = videoElement.videoWidth || 1280;
+        tempCanvas.height = videoElement.videoHeight || 720;
+        context.filter = currentFilterCSS;
+        context.translate(tempCanvas.width, 0);
+        context.scale(-1, 1);
+        context.drawImage(videoElement, 0, 0, tempCanvas.width, tempCanvas.height);
+
+        showPreview(tempCanvas.toDataURL('image/jpeg', 0.95), filename);
+    }
+
+    // --- PHOTOBOOTH 3x1 ---
+    async function startPhotobooth3x1() {
+        if (!isCameraOn) return alert("Nyalakan kamera dulu!");
+        if (isBusy) return;
+        isBusy = true;
+
+        let photos = [];
+        for (let i = 1; i <= 3; i++) {
+            await runCountdown(3);
+            photos.push(captureFrameAsDataURL());
+            if (i < 3) await new Promise(r => setTimeout(r, 1000));
+        }
+
+        generatePhotoboothStrip(photos);
+        isBusy = false;
+    }
+
+    function runCountdown(seconds) {
+        return new Promise((resolve) => {
+            countdownOverlay.style.display = 'flex';
+            let count = seconds;
+            countdownOverlay.innerText = count;
+            let timer = setInterval(() => {
+                count--;
+                if (count > 0) countdownOverlay.innerText = count;
+                else {
+                    clearInterval(timer);
+                    countdownOverlay.style.display = 'none';
+                    resolve();
+                }
+            }, 1000);
+        });
+    }
+
+    function captureFrameAsDataURL() {
+        const tempCanvas = document.createElement('canvas');
+        const tCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = videoElement.videoWidth || 1280;
+        tempCanvas.height = videoElement.videoHeight || 720;
+        tCtx.filter = currentFilterCSS;
+        tCtx.translate(tempCanvas.width, 0);
+        tCtx.scale(-1, 1);
+        tCtx.drawImage(videoElement, 0, 0, tempCanvas.width, tempCanvas.height);
+        return tempCanvas.toDataURL('image/jpeg', 0.95);
+    }
+
+    function generatePhotoboothStrip(dataUrls) {
+        const stripCanvas = document.createElement('canvas');
+        const sCtx = stripCanvas.getContext('2d');
+        const imgWidth = 600, imgHeight = 450, padding = 30, headerHeight = 90;
+
+        stripCanvas.width = imgWidth + (padding * 2);
+        stripCanvas.height = (imgHeight * 3) + (padding * 4) + headerHeight;
+
+        sCtx.fillStyle = "#ffffff";
+        sCtx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
+        sCtx.fillStyle = "#0b0f19";
+        sCtx.font = "bold 28px 'Poppins', sans-serif";
+        sCtx.textAlign = "center";
+        sCtx.fillText("POTRETKU STUDIO", stripCanvas.width / 2, padding + 35);
+        sCtx.fillStyle = "#94a3b8";
+        sCtx.font = "14px 'Poppins', sans-serif";
+        sCtx.fillText("✨ AI Photobooth Experience ✨", stripCanvas.width / 2, padding + 60);
+
+        let loadedCount = 0;
+        dataUrls.forEach((url, index) => {
+            let img = new Image();
+            img.src = url;
+            img.onload = () => {
+                let yPos = headerHeight + padding + (index * (imgHeight + padding));
+                sCtx.drawImage(img, padding, yPos, imgWidth, imgHeight);
+                loadedCount++;
+                if (loadedCount === dataUrls.length) {
+                    showPreview(stripCanvas.toDataURL('image/jpeg', 0.95), `Photobooth_3x1_${Date.now()}.jpg`);
+                }
+            }
+        });
+    }
+
+    // --- REKAM VIDEO ---
+    let mediaRecorder; let recordedChunks = []; let isRecording = false;
+    function toggleRecordVideo() {
+        if (!isCameraOn) return alert("Nyalakan kamera dulu!");
+        const btnRecord = document.getElementById('btn-record');
+        const recordText = document.getElementById('record-text');
+        const recordIcon = document.getElementById('record-icon');
+
+        if (!isRecording) {
+            recordedChunks = [];
+            try { mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' }); } 
+            catch (e) { mediaRecorder = new MediaRecorder(stream); }
+
+            mediaRecorder.ondataavailable = function(event) { if (event.data.size > 0) recordedChunks.push(event.data); };
+            mediaRecorder.onstop = function() {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Potretku_Video_${Date.now()}.webm`;
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            recordText.innerText = "Stop Rekam"; recordIcon.style.color = "#ef4444"; btnRecord.style.border = "1px solid #ef4444";
+        } else {
+            mediaRecorder.stop();
+            isRecording = false;
+            recordText.innerText = "Rekam Video"; recordIcon.style.color = "white"; btnRecord.style.border = "none";
+        }
+    }
+
+    function openDropdown(type) { document.getElementById(`${type}-modal`).style.display = 'flex'; }
+    function closeDropdowns(e) { if (e.target.classList.contains('dropdown-overlay')) e.target.style.display = 'none'; }
+    function selectOption(type, text, filterValue = null) {
+        document.getElementById(`active-${type}`).innerText = text.split(' ')[0] + ' ' + text.split(' ')[1];
+        const modal = document.getElementById(`${type}-modal`);
+        const items = modal.querySelectorAll('.dropdown-item');
+        items.forEach(item => {
+            const circle = item.querySelector('.radio-circle');
+            if (item.innerText.trim() === text.trim()) circle.classList.add('active');
+            else circle.classList.remove('active');
+        });
+
+        if (type === 'gesture') {
+            currentMode = text;
+            if (text === '✨ Mode Clean (Tanpa Garis)') canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        }
+        if (type === 'filter' && filterValue !== null) {
+            currentFilterCSS = filterValue;
+            videoElement.style.filter = filterValue;
+        }
+        modal.style.display = 'none';
+    }
+
+    window.onload = startCamera;
+</script>
+
+</body>
+</html>
